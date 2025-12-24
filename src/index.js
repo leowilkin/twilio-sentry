@@ -11,11 +11,48 @@ const {
   TWILIO_FROM_NUMBER,
   NOTIFICATION_NUMBERS,
   SENTRY_CLIENT_SECRET,
+  PROJECT_ROUTES,
   PORT = 3000,
 } = process.env;
 
 const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-const recipientNumbers = NOTIFICATION_NUMBERS?.split(',').map(n => n.trim()) || [];
+const defaultRecipients = NOTIFICATION_NUMBERS?.split(',').map(n => n.trim()) || [];
+
+let projectRoutes = {};
+try {
+  projectRoutes = PROJECT_ROUTES ? JSON.parse(PROJECT_ROUTES) : {};
+  Object.keys(projectRoutes).forEach(key => {
+    projectRoutes[key.toLowerCase()] = projectRoutes[key];
+  });
+} catch (e) {
+  console.error('Failed to parse PROJECT_ROUTES:', e.message);
+}
+
+function getProjectSlug(payload) {
+  const { data } = payload.body;
+  const resource = payload.headers?.['sentry-hook-resource'];
+  
+  if (resource === 'issue' && data?.issue?.project?.slug) {
+    return data.issue.project.slug.toLowerCase();
+  }
+  if (resource === 'event_alert' && data?.event?.project) {
+    return String(data.event.project).toLowerCase();
+  }
+  if (resource === 'metric_alert' && data?.metric_alert?.alert_rule?.project?.slug) {
+    return data.metric_alert.alert_rule.project.slug.toLowerCase();
+  }
+  return null;
+}
+
+function getRecipientsForProject(projectSlug) {
+  if (projectSlug && projectRoutes[projectSlug]) {
+    return projectRoutes[projectSlug];
+  }
+  if (Object.keys(projectRoutes).length > 0 && !projectRoutes[projectSlug]) {
+    return [];
+  }
+  return defaultRecipients;
+}
 
 function verifySignature(req, secret) {
   if (!secret) return true;
@@ -77,10 +114,10 @@ function formatAlertMessage(payload) {
   return `🚨 Sentry Notification: ${action || 'Alert'}\n${JSON.stringify(data).slice(0, 200)}`;
 }
 
-async function sendSMS(message) {
+async function sendSMS(message, recipients) {
   const results = [];
   
-  for (const to of recipientNumbers) {
+  for (const to of recipients) {
     try {
       const result = await twilioClient.messages.create({
         body: message,
@@ -105,11 +142,21 @@ app.post('/webhook/sentry', async (req, res) => {
   }
   
   const resource = req.headers['sentry-hook-resource'];
-  console.log(`Received Sentry webhook: ${resource} - ${req.body.action}`);
+  const payload = { headers: req.headers, body: req.body };
+  const projectSlug = getProjectSlug(payload);
+  
+  const recipients = getRecipientsForProject(projectSlug);
+  
+  console.log(`Received Sentry webhook: ${resource} - ${req.body.action} (project: ${projectSlug || 'unknown'}, recipients: ${recipients.length})`);
+  
+  if (recipients.length === 0) {
+    console.log(`Skipping notification: no recipients configured for project "${projectSlug}"`);
+    return res.json({ success: true, message: 'No recipients for this project, skipped' });
+  }
   
   try {
-    const message = formatAlertMessage({ headers: req.headers, body: req.body });
-    const results = await sendSMS(message);
+    const message = formatAlertMessage(payload);
+    const results = await sendSMS(message, recipients);
     
     res.json({ 
       success: true, 
