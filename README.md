@@ -1,3 +1,9 @@
+GONE are the days of silent sentry errors only to hit you in your sleep when you check slack or your inbox to find... production error after production error...
+
+now, you can get them hand delivered straight to your SMS inbox. don't like them? fix them then..
+
+anyways, continue for the real README.
+
 # Sentry → Twilio SMS Integration
 
 Receives Sentry incident webhooks and sends SMS notifications via Twilio.
