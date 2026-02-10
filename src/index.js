@@ -1,9 +1,7 @@
+const Sentry = require('@sentry/node');
 const express = require('express');
 const crypto = require('crypto');
 const twilio = require('twilio');
-
-const app = express();
-app.use(express.json());
 
 const {
   TWILIO_ACCOUNT_SID,
@@ -11,9 +9,18 @@ const {
   TWILIO_FROM_NUMBER,
   NOTIFICATION_NUMBERS,
   SENTRY_CLIENT_SECRET,
+  SENTRY_DSN,
   PROJECT_ROUTES,
   PORT = 3000,
 } = process.env;
+
+Sentry.init({
+  dsn: SENTRY_DSN,
+  tracesSampleRate: 1.0,
+});
+
+const app = express();
+app.use(express.json());
 
 const twilioClient = TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN
   ? twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
@@ -32,6 +39,7 @@ try {
 } catch (e) {
   console.error('Failed to parse PROJECT_ROUTES:', e.message);
   console.error('Raw value was:', JSON.stringify(PROJECT_ROUTES));
+  Sentry.captureException(e);
 }
 
 function getProjectSlug(payload) {
@@ -138,6 +146,7 @@ async function sendSMS(message, recipients) {
       results.push({ to, success: true, sid: result.sid });
     } catch (error) {
       console.error(`Failed to send SMS to ${to}:`, error.message);
+      Sentry.captureException(error);
       results.push({ to, success: false, error: error.message });
     }
   }
@@ -174,10 +183,13 @@ app.post('/webhook/sentry', async (req, res) => {
       results,
     });
   } catch (error) {
+    Sentry.captureException(error);
     console.error('Webhook processing error:', error);
     res.status(500).json({ error: 'Failed to process webhook' });
   }
 });
+
+Sentry.setupExpressErrorHandler(app);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
