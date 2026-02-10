@@ -23,7 +23,12 @@ const defaultRecipients = NOTIFICATION_NUMBERS?.split(',').map(n => n.trim()) ||
 let projectRoutes = {};
 try {
   console.log('Raw PROJECT_ROUTES env:', JSON.stringify(PROJECT_ROUTES));
-  projectRoutes = PROJECT_ROUTES ? JSON.parse(PROJECT_ROUTES) : {};
+  let routesStr = PROJECT_ROUTES || '';
+  // Some platforms double-quote and escape the JSON value; unwrap if needed
+  if (routesStr.startsWith('"') && routesStr.endsWith('"')) {
+    routesStr = JSON.parse(routesStr);
+  }
+  projectRoutes = routesStr ? JSON.parse(routesStr) : {};
   Object.keys(projectRoutes).forEach(key => {
     projectRoutes[key.toLowerCase()] = projectRoutes[key];
   });
