@@ -15,17 +15,22 @@ const {
   PORT = 3000,
 } = process.env;
 
-const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+const twilioClient = TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN
+  ? twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+  : null;
 const defaultRecipients = NOTIFICATION_NUMBERS?.split(',').map(n => n.trim()) || [];
 
 let projectRoutes = {};
 try {
+  console.log('Raw PROJECT_ROUTES env:', JSON.stringify(PROJECT_ROUTES));
   projectRoutes = PROJECT_ROUTES ? JSON.parse(PROJECT_ROUTES) : {};
   Object.keys(projectRoutes).forEach(key => {
     projectRoutes[key.toLowerCase()] = projectRoutes[key];
   });
+  console.log('Parsed project routes:', JSON.stringify(projectRoutes));
 } catch (e) {
   console.error('Failed to parse PROJECT_ROUTES:', e.message);
+  console.error('Raw value was:', JSON.stringify(PROJECT_ROUTES));
 }
 
 function getProjectSlug(payload) {
@@ -115,6 +120,10 @@ function formatAlertMessage(payload) {
 }
 
 async function sendSMS(message, recipients) {
+  if (!twilioClient) {
+    console.error('Twilio client not configured, skipping SMS');
+    return [{ success: false, error: 'Twilio not configured' }];
+  }
   const results = [];
   
   for (const to of recipients) {
